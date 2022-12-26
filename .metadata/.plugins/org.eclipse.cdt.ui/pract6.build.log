@@ -1,0 +1,17 @@
+17:48:07 **** Incremental Build of configuration Debug for project pract6 ****
+make -j8 all 
+arm-none-eabi-gcc "../Core/Src/main.c" -mcpu=cortex-m4 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32L475xx -c -I../Core/Inc -I"C:/Users/anton/STM32CubeIDE/workspace_1.11.0/pract6/L4_IOT_Sensors/Drivers/BSP/B-L475E-IOT01" -I"C:/Users/anton/STM32CubeIDE/workspace_1.11.0/pract6/L4_IOT_Sensors/Drivers/BSP/Components/lsm6dsl" -I../Drivers/STM32L4xx_HAL_Driver/Inc -I../Drivers/STM32L4xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32L4xx/Include -I../Drivers/CMSIS/Include -I../Middlewares/Third_Party/FreeRTOS/Source/include -I../Middlewares/Third_Party/FreeRTOS/Source/CMSIS_RTOS_V2 -I../Middlewares/Third_Party/FreeRTOS/Source/portable/GCC/ARM_CM4F -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -MMD -MP -MF"Core/Src/main.d" -MT"Core/Src/main.o" --specs=nano.specs -mfpu=fpv4-sp-d16 -mfloat-abi=hard -mthumb -o "Core/Src/main.o"
+arm-none-eabi-gcc -o "pract6.elf" @"objects.list"   -mcpu=cortex-m4 -T"C:\Users\anton\STM32CubeIDE\workspace_1.11.0\pract6\STM32L475VGTX_FLASH.ld" --specs=nosys.specs -Wl,-Map="pract6.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv4-sp-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
+Finished building target: pract6.elf
+ 
+arm-none-eabi-size   pract6.elf 
+arm-none-eabi-objdump -h -S  pract6.elf  > "pract6.list"
+   text	   data	    bss	    dec	    hex	filename
+  43368	    176	  10272	  53816	   d238	pract6.elf
+Finished building: default.size.stdout
+ 
+Finished building: pract6.list
+ 
+
+17:48:08 Build Finished. 0 errors, 0 warnings. (took 802ms)
+
