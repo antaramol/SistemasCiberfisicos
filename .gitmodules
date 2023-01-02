@@ -1,0 +1,3 @@
+[submodule "trabajoSCSH"]
+	path = trabajoSCSH
+	url = https://github.com/antaramol/trabajoSCSH.git
