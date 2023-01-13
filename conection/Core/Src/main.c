@@ -47,6 +47,10 @@
 //#define WIFISECURITY WIFI_ECN_OPEN
 #define WIFISECURITY WIFI_ECN_WPA2_PSK
 
+#define SOCKET 0
+#define WIFI_READ_TIMEOUT 10000
+#define WIFI_WRITE_TIMEOUT 0
+
 #ifdef  TERMINAL_USE
 #define LOG(a) printf a
 #else
@@ -863,6 +867,52 @@ void SPI3_IRQHandler(void)
   HAL_SPI_IRQHandler(&hspi);
 }
 
+int wifi_get_http(void)
+{
+uint8_t ret,datasent;
+uint8_t HTTP_REQUEST[]="GET /search?country=Spain HTTP/1.1\r\nHost: universities.hipolabs.com\r\n\r\n";
+uint8_t ipaddr[4]={54,236,250,67};
+uint8_t recvdata[1024];
+uint16_t remotePort=80;
+uint16_t recvlen;
+uint8_t err=0;
+
+if (wifi_connect()!=0) return -1;
+
+while(1){
+  ret=WIFI_OpenClientConnection(SOCKET, WIFI_TCP_PROTOCOL, "http", ipaddr, remotePort, 0);
+
+  if(ret!=WIFI_STATUS_OK) {
+    printf("Error in opening connection: %d\n",ret);
+  } else {
+    printf("Connection established.\n");
+  }
+
+  ret=WIFI_SendData(SOCKET, (uint8_t *)HTTP_REQUEST, strlen((char *)HTTP_REQUEST), &datasent, WIFI_WRITE_TIMEOUT);
+  if(ret!=WIFI_STATUS_OK) {
+    printf("Error in sending data: %d\n",ret);
+    err=1;
+  } else {
+    printf("Data sent\n");
+  }
+
+  ret=WIFI_ReceiveData(SOCKET, recvdata, 1000, &recvlen, WIFI_READ_TIMEOUT);
+  if(ret!=WIFI_STATUS_OK) {
+    printf("Error in receiving data: %d\n",ret);
+    err=1;
+  } else {
+    if(recvlen>0) {
+      recvdata[recvlen]=0;
+      printf("Received data: %s\n",recvdata);
+      // Procesar los datos recibidos
+    }
+  }
+  WIFI_CloseClientConnection(SOCKET);
+  osDelay(pdMS_TO_TICKS(5000));
+  }
+  return 0;
+}
+
 /* USER CODE END 4 */
 
 /* USER CODE BEGIN Header_StartDefaultTask */
@@ -894,7 +944,8 @@ void StartDefaultTask(void *argument)
 void wifiStartTask(void *argument)
 {
   /* USER CODE BEGIN wifiStartTask */
-	wifi_connect();
+	//wifi_connect();
+	wifi_get_http();
   /* Infinite loop */
   for(;;)
   {
