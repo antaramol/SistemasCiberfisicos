@@ -18,10 +18,16 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
+#include "cmsis_os.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include <stdio.h>
+#include "es_wifi.h"
+#include "wifi.h"
+#include "stm32l4xx_hal_uart.h"
+//#include "stm32l475e_iot01.h"
+//#include "stm32l475e_iot01_tsensor.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -35,6 +41,16 @@
 
 /* Private macro -------------------------------------------------------------*/
 /* USER CODE BEGIN PM */
+/* Update SSID and PASSWORD with own Access point settings */
+#define SSID     "Antonio"
+#define PASSWORD "Antonio_psswrd"
+#define WIFISECURITY WIFI_ECN_OPEN
+
+#ifdef  TERMINAL_USE
+#define LOG(a) printf a
+#else
+#define LOG(a)
+#endif
 
 /* USER CODE END PM */
 
@@ -52,8 +68,26 @@ UART_HandleTypeDef huart3;
 
 PCD_HandleTypeDef hpcd_USB_OTG_FS;
 
+/* Definitions for defaultTask */
+osThreadId_t defaultTaskHandle;
+const osThreadAttr_t defaultTask_attributes = {
+  .name = "defaultTask",
+  .stack_size = 256 * 4,
+  .priority = (osPriority_t) osPriorityAboveNormal,
+};
+/* Definitions for wifiStart */
+osThreadId_t wifiStartHandle;
+const osThreadAttr_t wifiStart_attributes = {
+  .name = "wifiStart",
+  .stack_size = 512 * 4,
+  .priority = (osPriority_t) osPriorityNormal,
+};
 /* USER CODE BEGIN PV */
-
+extern  SPI_HandleTypeDef hspi;
+static  uint8_t  IP_Addr[4];
+#if defined (TERMINAL_USE)
+extern UART_HandleTypeDef hDiscoUart;
+#endif /* TERMINAL_USE */
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -66,8 +100,19 @@ static void MX_SPI3_Init(void);
 static void MX_USART1_UART_Init(void);
 static void MX_USART3_UART_Init(void);
 static void MX_USB_OTG_FS_PCD_Init(void);
-/* USER CODE BEGIN PFP */
+void StartDefaultTask(void *argument);
+void wifiStartTask(void *argument);
 
+/* USER CODE BEGIN PFP */
+#if defined (TERMINAL_USE)
+#ifdef __GNUC__
+/* With GCC, small printf (option LD Linker->Libraries->Small printf
+   set to 'Yes') calls __io_putchar() */
+#define PUTCHAR_PROTOTYPE int __io_putchar(int ch)
+#else
+#define PUTCHAR_PROTOTYPE int fputc(int ch, FILE *f)
+#endif /* __GNUC__ */
+#endif /* TERMINAL_USE */
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -111,9 +156,68 @@ int main(void)
   MX_USART3_UART_Init();
   MX_USB_OTG_FS_PCD_Init();
   /* USER CODE BEGIN 2 */
+	#if defined (TERMINAL_USE)
+  	  /* Initialize all configured peripherals */
+  	  hDiscoUart.Instance = DISCOVERY_COM1;
+  	  hDiscoUart.Init.BaudRate = 115200;
+  	  hDiscoUart.Init.WordLength = UART_WORDLENGTH_8B;
+  	  hDiscoUart.Init.StopBits = UART_STOPBITS_1;
+	  hDiscoUart.Init.Parity = UART_PARITY_NONE;
+	  hDiscoUart.Init.Mode = UART_MODE_TX_RX;
+	  hDiscoUart.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+	  hDiscoUart.Init.OverSampling = UART_OVERSAMPLING_16;
+	  hDiscoUart.Init.OneBitSampling = UART_ONE_BIT_SAMPLE_DISABLE;
+	  hDiscoUart.AdvancedInit.AdvFeatureInit = UART_ADVFEATURE_NO_INIT;
+
+
+	  BSP_COM_Init(COM1, &hDiscoUart);
+
+	#endif /* TERMINAL_USE */
+
+	//BSP_TSENSOR_Init();
+
+	printf("****** Sistemas Ciberfísicos ****** \n\n");
 
   /* USER CODE END 2 */
 
+  /* Init scheduler */
+  osKernelInitialize();
+
+  /* USER CODE BEGIN RTOS_MUTEX */
+  /* add mutexes, ... */
+  /* USER CODE END RTOS_MUTEX */
+
+  /* USER CODE BEGIN RTOS_SEMAPHORES */
+  /* add semaphores, ... */
+  /* USER CODE END RTOS_SEMAPHORES */
+
+  /* USER CODE BEGIN RTOS_TIMERS */
+  /* start timers, add new ones, ... */
+  /* USER CODE END RTOS_TIMERS */
+
+  /* USER CODE BEGIN RTOS_QUEUES */
+  /* add queues, ... */
+  /* USER CODE END RTOS_QUEUES */
+
+  /* Create the thread(s) */
+  /* creation of defaultTask */
+  defaultTaskHandle = osThreadNew(StartDefaultTask, NULL, &defaultTask_attributes);
+
+  /* creation of wifiStart */
+  wifiStartHandle = osThreadNew(wifiStartTask, NULL, &wifiStart_attributes);
+
+  /* USER CODE BEGIN RTOS_THREADS */
+  /* add threads, ... */
+  /* USER CODE END RTOS_THREADS */
+
+  /* USER CODE BEGIN RTOS_EVENTS */
+  /* add events, ... */
+  /* USER CODE END RTOS_EVENTS */
+
+  /* Start scheduler */
+  osKernelStart();
+
+  /* We should never get here as control is now taken by the scheduler */
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
@@ -628,17 +732,196 @@ static void MX_GPIO_Init(void)
   HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
   /* EXTI interrupt init*/
-  HAL_NVIC_SetPriority(EXTI9_5_IRQn, 0, 0);
+  HAL_NVIC_SetPriority(EXTI1_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(EXTI1_IRQn);
+
+  HAL_NVIC_SetPriority(EXTI9_5_IRQn, 5, 0);
   HAL_NVIC_EnableIRQ(EXTI9_5_IRQn);
 
-  HAL_NVIC_SetPriority(EXTI15_10_IRQn, 0, 0);
+  HAL_NVIC_SetPriority(EXTI15_10_IRQn, 5, 0);
   HAL_NVIC_EnableIRQ(EXTI15_10_IRQn);
 
 }
 
 /* USER CODE BEGIN 4 */
+int _write(int file, char *ptr, int len)
+{
+	int DataIdx;
+	for(DataIdx=0; DataIdx<len; DataIdx++)
+	{
+		ITM_SendChar(*ptr++);
+	}
+	return len;
+}
+
+static int wifi_start(void)
+{
+  uint8_t  MAC_Addr[6];
+
+ /*Initialize and use WIFI module */
+  if(WIFI_Init() ==  WIFI_STATUS_OK)
+  {
+    printf("ES-WIFI Initialized.\n");
+    if(WIFI_GetMAC_Address(MAC_Addr) == WIFI_STATUS_OK)
+    {
+      printf("> eS-WiFi module MAC Address : %02X:%02X:%02X:%02X:%02X:%02X\n",
+               MAC_Addr[0],
+               MAC_Addr[1],
+               MAC_Addr[2],
+               MAC_Addr[3],
+               MAC_Addr[4],
+               MAC_Addr[5]);
+    }
+    else
+    {
+      printf("> ERROR : CANNOT get MAC address\n");
+      return -1;
+    }
+  }
+  else
+  {
+    return -1;
+  }
+  return 0;
+}
+
+int wifi_connect(void)
+{
+
+  wifi_start();
+
+  printf("\nConnecting to %s , %s\n",SSID,PASSWORD);
+  if( WIFI_Connect(SSID, PASSWORD, WIFISECURITY) == WIFI_STATUS_OK)
+  {
+    if(WIFI_GetIP_Address(IP_Addr) == WIFI_STATUS_OK)
+    {
+      printf("> es-wifi module connected: got IP Address : %d.%d.%d.%d\n",
+               IP_Addr[0],
+               IP_Addr[1],
+               IP_Addr[2],
+               IP_Addr[3]);
+    }
+    else
+    {
+		  printf(" ERROR : es-wifi module CANNOT get IP address\n");
+      return -1;
+    }
+  }
+  else
+  {
+		 printf("ERROR : es-wifi module NOT connected\n");
+     return -1;
+  }
+  return 0;
+}
+
+#if defined (TERMINAL_USE)
+/**
+  * @brief  Retargets the C library printf function to the USART.
+  * @param  None
+  * @retval None
+  */
+PUTCHAR_PROTOTYPE
+{
+  /* Place your implementation of fputc here */
+  /* e.g. write a character to the USART1 and Loop until the end of transmission */
+  HAL_UART_Transmit(&hDiscoUart, (uint8_t *)&ch, 1, 0xFFFF);
+
+  return ch;
+}
+#endif /* TERMINAL_USE */
+
+/**
+  * @brief  EXTI line detection callback.
+  * @param  GPIO_Pin: Specifies the port pin connected to corresponding EXTI line.
+  * @retval None
+  */
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
+{
+  switch (GPIO_Pin)
+  {
+    case (GPIO_PIN_1):
+    {
+      SPI_WIFI_ISR();
+      break;
+    }
+    default:
+    {
+      break;
+    }
+  }
+}
+
+/**
+  * @brief  SPI3 line detection callback.
+  * @param  None
+  * @retval None
+  */
+void SPI3_IRQHandler(void)
+{
+  HAL_SPI_IRQHandler(&hspi);
+}
 
 /* USER CODE END 4 */
+
+/* USER CODE BEGIN Header_StartDefaultTask */
+/**
+  * @brief  Function implementing the defaultTask thread.
+  * @param  argument: Not used
+  * @retval None
+  */
+/* USER CODE END Header_StartDefaultTask */
+void StartDefaultTask(void *argument)
+{
+  /* USER CODE BEGIN 5 */
+  /* Infinite loop */
+  for(;;)
+  {
+	  printf("Hola\r\n");
+    osDelay(pdMS_TO_TICKS(1000));
+  }
+  /* USER CODE END 5 */
+}
+
+/* USER CODE BEGIN Header_wifiStartTask */
+/**
+* @brief Function implementing the wifiStart thread.
+* @param argument: Not used
+* @retval None
+*/
+/* USER CODE END Header_wifiStartTask */
+void wifiStartTask(void *argument)
+{
+  /* USER CODE BEGIN wifiStartTask */
+	wifi_connect();
+  /* Infinite loop */
+  for(;;)
+  {
+    osDelay(1);
+  }
+  /* USER CODE END wifiStartTask */
+}
+
+/**
+  * @brief  Period elapsed callback in non blocking mode
+  * @note   This function is called  when TIM6 interrupt took place, inside
+  * HAL_TIM_IRQHandler(). It makes a direct call to HAL_IncTick() to increment
+  * a global variable "uwTick" used as application time base.
+  * @param  htim : TIM handle
+  * @retval None
+  */
+void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
+{
+  /* USER CODE BEGIN Callback 0 */
+
+  /* USER CODE END Callback 0 */
+  if (htim->Instance == TIM6) {
+    HAL_IncTick();
+  }
+  /* USER CODE BEGIN Callback 1 */
+
+  /* USER CODE END Callback 1 */
+}
 
 /**
   * @brief  This function is executed in case of error occurrence.
