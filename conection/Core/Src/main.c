@@ -44,7 +44,8 @@
 /* Update SSID and PASSWORD with own Access point settings */
 #define SSID     "Antonio"
 #define PASSWORD "Antonio_psswrd"
-#define WIFISECURITY WIFI_ECN_OPEN
+//#define WIFISECURITY WIFI_ECN_OPEN
+#define WIFISECURITY WIFI_ECN_WPA2_PSK
 
 #ifdef  TERMINAL_USE
 #define LOG(a) printf a
@@ -877,7 +878,7 @@ void StartDefaultTask(void *argument)
   /* Infinite loop */
   for(;;)
   {
-	  printf("Hola\r\n");
+	//printf("Hola\r\n");
     osDelay(pdMS_TO_TICKS(1000));
   }
   /* USER CODE END 5 */
