@@ -23,8 +23,13 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include <stdio.h>
-#include "stm32l475e_iot01_accelero.h"
-
+#include "es_wifi.h"
+#include "wifi.h"
+#include "stm32l4xx_hal_uart.h"
+#include "stm32l475e_iot01.h"
+//#include "stm32l475e_iot01_tsensor.h"
+//#include "core_mqtt.h"
+//#include "mqtt_priv.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -38,6 +43,20 @@
 
 /* Private macro -------------------------------------------------------------*/
 /* USER CODE BEGIN PM */
+/* Update SSID and PASSWORD with own Access point settings */
+#define SSID     "Antonio"
+#define PASSWORD "Antonio_psswrd"
+#define WIFISECURITY WIFI_ECN_OPEN
+//#define WIFISECURITY WIFI_ECN_WPA2_PSK
+#define SOCKET 0
+#define WIFI_READ_TIMEOUT 10000
+#define WIFI_WRITE_TIMEOUT 0
+
+#ifdef  TERMINAL_USE
+#define LOG(a) printf a
+#else
+#define LOG(a)
+#endif
 
 /* USER CODE END PM */
 
@@ -55,20 +74,26 @@ UART_HandleTypeDef huart3;
 
 PCD_HandleTypeDef hpcd_USB_OTG_FS;
 
-/* Definitions for sendAccel */
-osThreadId_t sendAccelHandle;
-const osThreadAttr_t sendAccel_attributes = {
-  .name = "sendAccel",
-  .stack_size = 128 * 4,
+/* Definitions for defaultTask */
+osThreadId_t defaultTaskHandle;
+const osThreadAttr_t defaultTask_attributes = {
+  .name = "defaultTask",
+  .stack_size = 256 * 4,
+  .priority = (osPriority_t) osPriorityAboveNormal,
+};
+/* Definitions for wifiStart */
+osThreadId_t wifiStartHandle;
+const osThreadAttr_t wifiStart_attributes = {
+  .name = "wifiStart",
+  .stack_size = 512 * 4,
   .priority = (osPriority_t) osPriorityNormal,
 };
-/* Definitions for myQueue01 */
-osMessageQueueId_t myQueue01Handle;
-const osMessageQueueAttr_t myQueue01_attributes = {
-  .name = "myQueue01"
-};
 /* USER CODE BEGIN PV */
-ACCELERO_StatusTypeDef status_acc;
+extern  SPI_HandleTypeDef hspi;
+static  uint8_t  IP_Addr[4];
+#if defined (TERMINAL_USE)
+extern UART_HandleTypeDef hDiscoUart;
+#endif /* TERMINAL_USE */
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -81,11 +106,20 @@ static void MX_SPI3_Init(void);
 static void MX_USART1_UART_Init(void);
 static void MX_USART3_UART_Init(void);
 static void MX_USB_OTG_FS_PCD_Init(void);
-void sendAccel_func(void *argument);
+void StartDefaultTask(void *argument);
+void wifiStartTask(void *argument);
 
 /* USER CODE BEGIN PFP */
 
-ACCELERO_StatusTypeDef BSP_ACCELERO_Init_INT(void);
+#if defined (TERMINAL_USE)
+#ifdef __GNUC__
+/* With GCC, small printf (option LD Linker->Libraries->Small printf
+   set to 'Yes') calls __io_putchar() */
+#define PUTCHAR_PROTOTYPE int __io_putchar(int ch)
+#else
+#define PUTCHAR_PROTOTYPE int fputc(int ch, FILE *f)
+#endif /* __GNUC__ */
+#endif /* TERMINAL_USE */
 
 /* USER CODE END PFP */
 
@@ -130,10 +164,26 @@ int main(void)
   MX_USART3_UART_Init();
   MX_USB_OTG_FS_PCD_Init();
   /* USER CODE BEGIN 2 */
-  status_acc = BSP_ACCELERO_Init_INT();
-  if (status_acc == ACCELERO_OK){
-	  printf("Acelerometro inicializado\r\n");
-  }
+	#if defined (TERMINAL_USE)
+  	  /* Initialize all configured peripherals */
+	  hDiscoUart.Instance = DISCOVERY_COM1;
+	  hDiscoUart.Init.BaudRate = 115200;
+	  hDiscoUart.Init.WordLength = UART_WORDLENGTH_8B;
+	  hDiscoUart.Init.StopBits = UART_STOPBITS_1;
+	  hDiscoUart.Init.Parity = UART_PARITY_NONE;
+	  hDiscoUart.Init.Mode = UART_MODE_TX_RX;
+	  hDiscoUart.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+	  hDiscoUart.Init.OverSampling = UART_OVERSAMPLING_16;
+	  hDiscoUart.Init.OneBitSampling = UART_ONE_BIT_SAMPLE_DISABLE;
+	  hDiscoUart.AdvancedInit.AdvFeatureInit = UART_ADVFEATURE_NO_INIT;
+
+
+	  BSP_COM_Init(COM1, &hDiscoUart);
+
+	#endif /* TERMINAL_USE */
+
+
+	printf("****** Sistemas Ciberfisicos ****** \n\n");
 
   /* USER CODE END 2 */
 
@@ -152,17 +202,16 @@ int main(void)
   /* start timers, add new ones, ... */
   /* USER CODE END RTOS_TIMERS */
 
-  /* Create the queue(s) */
-  /* creation of myQueue01 */
-  myQueue01Handle = osMessageQueueNew (4, sizeof(uint8_t), &myQueue01_attributes);
-
   /* USER CODE BEGIN RTOS_QUEUES */
   /* add queues, ... */
   /* USER CODE END RTOS_QUEUES */
 
   /* Create the thread(s) */
-  /* creation of sendAccel */
-  sendAccelHandle = osThreadNew(sendAccel_func, NULL, &sendAccel_attributes);
+  /* creation of defaultTask */
+  defaultTaskHandle = osThreadNew(StartDefaultTask, NULL, &defaultTask_attributes);
+
+  /* creation of wifiStart */
+  wifiStartHandle = osThreadNew(wifiStartTask, NULL, &wifiStart_attributes);
 
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */
@@ -690,6 +739,9 @@ static void MX_GPIO_Init(void)
   HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
   /* EXTI interrupt init*/
+  HAL_NVIC_SetPriority(EXTI1_IRQn, 5, 0);
+  HAL_NVIC_EnableIRQ(EXTI1_IRQn);
+
   HAL_NVIC_SetPriority(EXTI9_5_IRQn, 5, 0);
   HAL_NVIC_EnableIRQ(EXTI9_5_IRQn);
 
@@ -708,59 +760,128 @@ int _write(int file, char *ptr, int len)
 	}
 	return len;
 }
-ACCELERO_StatusTypeDef BSP_ACCELERO_Init_INT(void)
-{
-	ACCELERO_StatusTypeDef ret;
-	ret = BSP_ACCELERO_Init();
-	if (ret == ACCELERO_OK)
-	{
-		/* Initialize interruption*/
-		uint8_t tmp;
-		tmp = SENSOR_IO_Read(LSM6DSL_ACC_GYRO_I2C_ADDRESS_LOW, LSM6DSL_ACC_GYRO_DRDY_PULSE_CFG_G);
-		tmp |=0b10000000;
-		SENSOR_IO_Write(LSM6DSL_ACC_GYRO_I2C_ADDRESS_LOW, LSM6DSL_ACC_GYRO_DRDY_PULSE_CFG_G, tmp);
-		tmp = SENSOR_IO_Read(LSM6DSL_ACC_GYRO_I2C_ADDRESS_LOW, LSM6DSL_ACC_GYRO_INT1_CTRL);
-		tmp |=0b00000001;
-		SENSOR_IO_Write(LSM6DSL_ACC_GYRO_I2C_ADDRESS_LOW, LSM6DSL_ACC_GYRO_INT1_CTRL, tmp);
-		tmp = SENSOR_IO_Read(LSM6DSL_ACC_GYRO_I2C_ADDRESS_LOW, LSM6DSL_ACC_GYRO_MASTER_CONFIG);
-		tmp |=0b10000000;
-		SENSOR_IO_Write(LSM6DSL_ACC_GYRO_I2C_ADDRESS_LOW, LSM6DSL_ACC_GYRO_MASTER_CONFIG, tmp);
-	}
-	return ret;
-}
 
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
 	if (GPIO_Pin == LSM6DSL_INT1_EXTI11_Pin)
 	{
-		/* Aquí escribiremos nuestra funcionalidad*/
-		osThreadFlagsSet(sendAccelHandle,0x0001U);
+		switch (GPIO_Pin)
+		  {
+		    case (GPIO_PIN_1):
+		    {
+		      SPI_WIFI_ISR();
+		      break;
+		    }
+		    default:
+		    {
+		      break;
+		    }
+		  }
+
 	}
 }
+
+
+static int wifi_start(void)
+{
+  uint8_t  MAC_Addr[6];
+  printf("Iniciando wifi\r\n");
+ /*Initialize and use WIFI module */
+  if(WIFI_Init() ==  WIFI_STATUS_OK)
+  {
+    printf("ES-WIFI Initialized.\r\n");
+    if(WIFI_GetMAC_Address(MAC_Addr) == WIFI_STATUS_OK)
+    {
+      printf("> eS-WiFi module MAC Address : %02X:%02X:%02X:%02X:%02X:%02X\n",
+               MAC_Addr[0],
+               MAC_Addr[1],
+               MAC_Addr[2],
+               MAC_Addr[3],
+               MAC_Addr[4],
+               MAC_Addr[5]);
+    }
+    else
+    {
+      printf("> ERROR : CANNOT get MAC address\n");
+      return -1;
+    }
+  }
+  else
+  {
+    return -1;
+  }
+  return 0;
+}
+
+
+int wifi_connect(void)
+{
+
+  wifi_start();
+
+  printf("\nConnecting to %s , %s\n",SSID,PASSWORD);
+  if( WIFI_Connect(SSID, PASSWORD, WIFISECURITY) == WIFI_STATUS_OK)
+  {
+    if(WIFI_GetIP_Address(IP_Addr) == WIFI_STATUS_OK)
+    {
+      printf("> es-wifi module connected: got IP Address : %d.%d.%d.%d\n",
+               IP_Addr[0],
+               IP_Addr[1],
+               IP_Addr[2],
+               IP_Addr[3]);
+    }
+    else
+    {
+		  printf(" ERROR : es-wifi module CANNOT get IP address\n");
+      return -1;
+    }
+  }
+  else
+  {
+		 printf("ERROR : es-wifi module NOT connected\n");
+     return -1;
+  }
+  return 0;
+}
+
+
 /* USER CODE END 4 */
 
-/* USER CODE BEGIN Header_sendAccel_func */
+/* USER CODE BEGIN Header_StartDefaultTask */
 /**
-  * @brief  Function implementing the sendAccel thread.
+  * @brief  Function implementing the defaultTask thread.
   * @param  argument: Not used
   * @retval None
   */
-/* USER CODE END Header_sendAccel_func */
-void sendAccel_func(void *argument)
+/* USER CODE END Header_StartDefaultTask */
+void StartDefaultTask(void *argument)
 {
   /* USER CODE BEGIN 5 */
-	uint32_t nticks = 0;
-	int16_t DataXYZ[3];
-	int16_t *pDataXYZ = DataXYZ;
 	/* Infinite loop */
 	for(;;)
 	{
-		nticks = osKernelGetTickCount();
-		BSP_ACCELERO_AccGetXYZ(pDataXYZ);
-		printf("Tick: %ld	Eje x: %d	Eje y: %d	Eje z: %d\r\n",nticks,DataXYZ[0],DataXYZ[1],DataXYZ[2]);
-		osThreadFlagsWait(0x0001U, osFlagsWaitAny, pdMS_TO_TICKS(1000));
+		osDelay(1);
 	}
   /* USER CODE END 5 */
+}
+
+/* USER CODE BEGIN Header_wifiStartTask */
+/**
+* @brief Function implementing the wifiStart thread.
+* @param argument: Not used
+* @retval None
+*/
+/* USER CODE END Header_wifiStartTask */
+void wifiStartTask(void *argument)
+{
+  /* USER CODE BEGIN wifiStartTask */
+	wifi_connect();
+  /* Infinite loop */
+  for(;;)
+  {
+    osDelay(1);
+  }
+  /* USER CODE END wifiStartTask */
 }
 
 /**

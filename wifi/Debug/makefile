@@ -13,6 +13,9 @@ RM := rm -rf
 -include Middlewares/Third_Party/FreeRTOS/Source/portable/GCC/ARM_CM4F/subdir.mk
 -include Middlewares/Third_Party/FreeRTOS/Source/CMSIS_RTOS_V2/subdir.mk
 -include Middlewares/Third_Party/FreeRTOS/Source/subdir.mk
+-include Libraries/coreMQTT/source/interface/subdir.mk
+-include Libraries/coreMQTT/source/subdir.mk
+-include Libraries/WIFI/subdir.mk
 -include L4_IOT_Sensors/Drivers/BSP/Components/lsm6dsl/subdir.mk
 -include L4_IOT_Sensors/Drivers/BSP/B-L475E-IOT01/subdir.mk
 -include Drivers/STM32L4xx_HAL_Driver/Src/subdir.mk
@@ -40,34 +43,34 @@ $(wildcard ../makefile.init) \
 $(wildcard ../makefile.targets) \
 
 
-BUILD_ARTIFACT_NAME := pract6
+BUILD_ARTIFACT_NAME := wifi
 BUILD_ARTIFACT_EXTENSION := elf
 BUILD_ARTIFACT_PREFIX :=
 BUILD_ARTIFACT := $(BUILD_ARTIFACT_PREFIX)$(BUILD_ARTIFACT_NAME)$(if $(BUILD_ARTIFACT_EXTENSION),.$(BUILD_ARTIFACT_EXTENSION),)
 
 # Add inputs and outputs from these tool invocations to the build variables 
 EXECUTABLES += \
-pract6.elf \
+wifi.elf \
 
 MAP_FILES += \
-pract6.map \
+wifi.map \
 
 SIZE_OUTPUT += \
 default.size.stdout \
 
 OBJDUMP_LIST += \
-pract6.list \
+wifi.list \
 
 
 # All Target
 all: main-build
 
 # Main-build Target
-main-build: pract6.elf secondary-outputs
+main-build: wifi.elf secondary-outputs
 
 # Tool invocations
-pract6.elf pract6.map: $(OBJS) $(USER_OBJS) C:\Users\anton\STM32CubeIDE\workspace_1.11.0\pract6\STM32L475VGTX_FLASH.ld makefile objects.list $(OPTIONAL_TOOL_DEPS)
-	arm-none-eabi-gcc -o "pract6.elf" @"objects.list" $(USER_OBJS) $(LIBS) -mcpu=cortex-m4 -T"C:\Users\anton\STM32CubeIDE\workspace_1.11.0\pract6\STM32L475VGTX_FLASH.ld" --specs=nosys.specs -Wl,-Map="pract6.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv4-sp-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
+wifi.elf wifi.map: $(OBJS) $(USER_OBJS) C:\Users\anton\STM32CubeIDE\workspace_1.11.0\wifi\STM32L475VGTX_FLASH.ld makefile objects.list $(OPTIONAL_TOOL_DEPS)
+	arm-none-eabi-gcc -o "wifi.elf" @"objects.list" $(USER_OBJS) $(LIBS) -mcpu=cortex-m4 -T"C:\Users\anton\STM32CubeIDE\workspace_1.11.0\wifi\STM32L475VGTX_FLASH.ld" --specs=nosys.specs -Wl,-Map="wifi.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv4-sp-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
 	@echo 'Finished building target: $@'
 	@echo ' '
 
@@ -76,14 +79,14 @@ default.size.stdout: $(EXECUTABLES) makefile objects.list $(OPTIONAL_TOOL_DEPS)
 	@echo 'Finished building: $@'
 	@echo ' '
 
-pract6.list: $(EXECUTABLES) makefile objects.list $(OPTIONAL_TOOL_DEPS)
-	arm-none-eabi-objdump -h -S $(EXECUTABLES) > "pract6.list"
+wifi.list: $(EXECUTABLES) makefile objects.list $(OPTIONAL_TOOL_DEPS)
+	arm-none-eabi-objdump -h -S $(EXECUTABLES) > "wifi.list"
 	@echo 'Finished building: $@'
 	@echo ' '
 
 # Other Targets
 clean:
-	-$(RM) default.size.stdout pract6.elf pract6.list pract6.map
+	-$(RM) default.size.stdout wifi.elf wifi.list wifi.map
 	-@echo ' '
 
 secondary-outputs: $(SIZE_OUTPUT) $(OBJDUMP_LIST)
