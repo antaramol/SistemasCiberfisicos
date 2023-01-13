@@ -23,6 +23,8 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include <stdio.h>
+#include <math.h>
+
 #include "es_wifi.h"
 #include "wifi.h"
 #include "stm32l4xx_hal_uart.h"
@@ -48,7 +50,7 @@
 #define WIFISECURITY WIFI_ECN_WPA2_PSK
 
 #define SOCKET 0
-#define WIFI_READ_TIMEOUT 10000
+#define WIFI_READ_TIMEOUT 20000
 #define WIFI_WRITE_TIMEOUT 0
 
 #ifdef  TERMINAL_USE
@@ -181,7 +183,7 @@ int main(void)
 
 	//BSP_TSENSOR_Init();
 
-	printf("****** Sistemas Ciberfísicos ****** \n\n");
+	printf("****** Sistemas Ciberfisicos ****** \n\n");
 
   /* USER CODE END 2 */
 
@@ -869,13 +871,18 @@ void SPI3_IRQHandler(void)
 
 int wifi_get_http(void)
 {
-uint8_t ret,datasent;
-uint8_t HTTP_REQUEST[]="GET /search?country=Spain HTTP/1.1\r\nHost: universities.hipolabs.com\r\n\r\n";
-uint8_t ipaddr[4]={54,236,250,67};
+uint8_t ret;
+uint16_t datasent;
+//uint8_t HTTP_REQUEST[]="GET /search?country=Spain HTTP/1.1\r\nHost: universities.hipolabs.com\r\n\r\n";
+//uint8_t ipaddr[4]={54,236,250,67};
+uint8_t HTTP_REQUEST[]="GET /api/v1.0/random?min=1&max=1000&count=1 HTTP/1.1\r\nHost: www.randomnumberapi.com\r\n\r\n";
+uint8_t ipaddr[4]={104,21,79,142};
 uint8_t recvdata[1024];
 uint16_t remotePort=80;
 uint16_t recvlen;
-uint8_t err=0;
+uint8_t i;
+uint16_t num;
+//uint8_t err=0;
 
 if (wifi_connect()!=0) return -1;
 
@@ -891,7 +898,7 @@ while(1){
   ret=WIFI_SendData(SOCKET, (uint8_t *)HTTP_REQUEST, strlen((char *)HTTP_REQUEST), &datasent, WIFI_WRITE_TIMEOUT);
   if(ret!=WIFI_STATUS_OK) {
     printf("Error in sending data: %d\n",ret);
-    err=1;
+    //err=1;
   } else {
     printf("Data sent\n");
   }
@@ -899,12 +906,23 @@ while(1){
   ret=WIFI_ReceiveData(SOCKET, recvdata, 1000, &recvlen, WIFI_READ_TIMEOUT);
   if(ret!=WIFI_STATUS_OK) {
     printf("Error in receiving data: %d\n",ret);
-    err=1;
+    //err=1;
   } else {
     if(recvlen>0) {
       recvdata[recvlen]=0;
       printf("Received data: %s\n",recvdata);
       // Procesar los datos recibidos
+
+      //Calculamos el numero
+
+      num = 0;
+      i = 0;
+      while(recvdata[recvlen-i-2] != '[' && i<3){
+    	  //printf("%c,%d\r\n",recvdata[recvlen-i-2],pow(10,i));
+    	  num = num + pow(10,i)*(recvdata[recvlen-i-2]-48); //datos al final en formato [nnn],[nn]o[nn]
+    	  i++;
+      }
+      printf("Numero=%d\r\n",num);
     }
   }
   WIFI_CloseClientConnection(SOCKET);
