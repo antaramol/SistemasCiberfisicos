@@ -208,8 +208,6 @@ void Error_Handler(void);
 #define SYS_JTD0_SWO_GPIO_Port GPIOB
 #define ARD_D5_Pin GPIO_PIN_4
 #define ARD_D5_GPIO_Port GPIOB
-#define SPSGRF_915_SPI3_CSN_Pin GPIO_PIN_5
-#define SPSGRF_915_SPI3_CSN_GPIO_Port GPIOB
 #define ST_LINK_UART1_TX_Pin GPIO_PIN_6
 #define ST_LINK_UART1_TX_GPIO_Port GPIOB
 #define ST_LINK_UART1_RX_Pin GPIO_PIN_7
@@ -222,6 +220,7 @@ void Error_Handler(void);
 #define ISM43362_SPI3_CSN_GPIO_Port GPIOE
 #define ISM43362_DRDY_EXTI1_Pin GPIO_PIN_1
 #define ISM43362_DRDY_EXTI1_GPIO_Port GPIOE
+#define ISM43362_DRDY_EXTI1_EXTI_IRQn EXTI1_IRQn
 
 /* USER CODE BEGIN Private defines */
 

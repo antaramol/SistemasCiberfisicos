@@ -22,7 +22,14 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include "es_wifi.h"
+#include "wifi.h"
+#include "stm32l4xx_hal_uart.h"
+//#include "stm32l475e_iot01.h"
+//#include "stm32l475e_iot01_tsensor.h"
+#include "core_mqtt.h"
+#include "mqtt_priv.h"
+//#include "timers.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -36,7 +43,21 @@
 
 /* Private macro -------------------------------------------------------------*/
 /* USER CODE BEGIN PM */
+/* Update SSID and PASSWORD with own Access point settings */
+#define SSID     "Antonio"
+#define PASSWORD "Antonio_psswrd"
+//#define WIFISECURITY WIFI_ECN_OPEN
+#define WIFISECURITY WIFI_ECN_WPA2_PSK
 
+#define SOCKET 0
+#define WIFI_READ_TIMEOUT 20000
+#define WIFI_WRITE_TIMEOUT 0
+
+#ifdef  TERMINAL_USE
+#define LOG(a) printf a
+#else
+#define LOG(a)
+#endif
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
@@ -57,11 +78,22 @@ PCD_HandleTypeDef hpcd_USB_OTG_FS;
 osThreadId_t defaultTaskHandle;
 const osThreadAttr_t defaultTask_attributes = {
   .name = "defaultTask",
-  .stack_size = 128 * 4,
+  .stack_size = 256 * 4,
+  .priority = (osPriority_t) osPriorityAboveNormal,
+};
+/* Definitions for wifiStarat */
+osThreadId_t wifiStaratHandle;
+const osThreadAttr_t wifiStarat_attributes = {
+  .name = "wifiStarat",
+  .stack_size = 512 * 4,
   .priority = (osPriority_t) osPriorityNormal,
 };
 /* USER CODE BEGIN PV */
-
+extern  SPI_HandleTypeDef hspi;
+static  uint8_t  IP_Addr[4];
+#if defined (TERMINAL_USE)
+extern UART_HandleTypeDef hDiscoUart;
+#endif /* TERMINAL_USE */
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -75,9 +107,18 @@ static void MX_USART1_UART_Init(void);
 static void MX_USART3_UART_Init(void);
 static void MX_USB_OTG_FS_PCD_Init(void);
 void StartDefaultTask(void *argument);
+void wifiStartTask(void *argument);
 
 /* USER CODE BEGIN PFP */
-
+#if defined (TERMINAL_USE)
+#ifdef __GNUC__
+/* With GCC, small printf (option LD Linker->Libraries->Small printf
+   set to 'Yes') calls __io_putchar() */
+#define PUTCHAR_PROTOTYPE int __io_putchar(int ch)
+#else
+#define PUTCHAR_PROTOTYPE int fputc(int ch, FILE *f)
+#endif /* __GNUC__ */
+#endif /* TERMINAL_USE */
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -121,7 +162,27 @@ int main(void)
   MX_USART3_UART_Init();
   MX_USB_OTG_FS_PCD_Init();
   /* USER CODE BEGIN 2 */
+	#if defined (TERMINAL_USE)
+		  /* Initialize all configured peripherals */
+		  hDiscoUart.Instance = DISCOVERY_COM1;
+		  hDiscoUart.Init.BaudRate = 115200;
+		  hDiscoUart.Init.WordLength = UART_WORDLENGTH_8B;
+		  hDiscoUart.Init.StopBits = UART_STOPBITS_1;
+		  hDiscoUart.Init.Parity = UART_PARITY_NONE;
+		  hDiscoUart.Init.Mode = UART_MODE_TX_RX;
+		  hDiscoUart.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+		  hDiscoUart.Init.OverSampling = UART_OVERSAMPLING_16;
+		  hDiscoUart.Init.OneBitSampling = UART_ONE_BIT_SAMPLE_DISABLE;
+		  hDiscoUart.AdvancedInit.AdvFeatureInit = UART_ADVFEATURE_NO_INIT;
 
+
+		  BSP_COM_Init(COM1, &hDiscoUart);
+
+		#endif /* TERMINAL_USE */
+
+		//BSP_TSENSOR_Init();
+
+		printf("****** Sistemas Ciberfisicos ****** \n\n");
   /* USER CODE END 2 */
 
   /* Init scheduler */
@@ -146,6 +207,9 @@ int main(void)
   /* Create the thread(s) */
   /* creation of defaultTask */
   defaultTaskHandle = osThreadNew(StartDefaultTask, NULL, &defaultTask_attributes);
+
+  /* creation of wifiStarat */
+  wifiStaratHandle = osThreadNew(wifiStartTask, NULL, &wifiStarat_attributes);
 
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */
@@ -530,9 +594,6 @@ static void MX_GPIO_Init(void)
   HAL_GPIO_WritePin(GPIOC, VL53L0X_XSHUT_Pin|LED3_WIFI__LED4_BLE_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(SPSGRF_915_SPI3_CSN_GPIO_Port, SPSGRF_915_SPI3_CSN_Pin, GPIO_PIN_SET);
-
-  /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(ISM43362_SPI3_CSN_GPIO_Port, ISM43362_SPI3_CSN_Pin, GPIO_PIN_SET);
 
   /*Configure GPIO pins : M24SR64_Y_RF_DISABLE_Pin M24SR64_Y_GPO_Pin ISM43362_RST_Pin ISM43362_SPI3_CSN_Pin */
@@ -612,9 +673,9 @@ static void MX_GPIO_Init(void)
   HAL_GPIO_Init(ARD_D6_GPIO_Port, &GPIO_InitStruct);
 
   /*Configure GPIO pins : ARD_D8_Pin ISM43362_BOOT0_Pin ISM43362_WAKEUP_Pin LED2_Pin
-                           SPSGRF_915_SDN_Pin ARD_D5_Pin SPSGRF_915_SPI3_CSN_Pin */
+                           SPSGRF_915_SDN_Pin ARD_D5_Pin */
   GPIO_InitStruct.Pin = ARD_D8_Pin|ISM43362_BOOT0_Pin|ISM43362_WAKEUP_Pin|LED2_Pin
-                          |SPSGRF_915_SDN_Pin|ARD_D5_Pin|SPSGRF_915_SPI3_CSN_Pin;
+                          |SPSGRF_915_SDN_Pin|ARD_D5_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
@@ -673,6 +734,9 @@ static void MX_GPIO_Init(void)
   HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
   /* EXTI interrupt init*/
+  HAL_NVIC_SetPriority(EXTI1_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(EXTI1_IRQn);
+
   HAL_NVIC_SetPriority(EXTI9_5_IRQn, 5, 0);
   HAL_NVIC_EnableIRQ(EXTI9_5_IRQn);
 
@@ -691,6 +755,115 @@ int _write(int file, char *ptr, int len)
 	}
 	return len;
 }
+
+static int wifi_start(void)
+{
+  uint8_t  MAC_Addr[6];
+
+ /*Initialize and use WIFI module */
+  if(WIFI_Init() ==  WIFI_STATUS_OK)
+  {
+    printf("ES-WIFI Initialized.\n");
+    if(WIFI_GetMAC_Address(MAC_Addr) == WIFI_STATUS_OK)
+    {
+      printf("> eS-WiFi module MAC Address : %02X:%02X:%02X:%02X:%02X:%02X\n",
+               MAC_Addr[0],
+               MAC_Addr[1],
+               MAC_Addr[2],
+               MAC_Addr[3],
+               MAC_Addr[4],
+               MAC_Addr[5]);
+    }
+    else
+    {
+      printf("> ERROR : CANNOT get MAC address\n");
+      return -1;
+    }
+  }
+  else
+  {
+    return -1;
+  }
+  return 0;
+}
+
+int wifi_connect(void)
+{
+
+  wifi_start();
+
+  printf("\nConnecting to %s , %s\n",SSID,PASSWORD);
+  if( WIFI_Connect(SSID, PASSWORD, WIFISECURITY) == WIFI_STATUS_OK)
+  {
+    if(WIFI_GetIP_Address(IP_Addr) == WIFI_STATUS_OK)
+    {
+      printf("> es-wifi module connected: got IP Address : %d.%d.%d.%d\n",
+               IP_Addr[0],
+               IP_Addr[1],
+               IP_Addr[2],
+               IP_Addr[3]);
+    }
+    else
+    {
+		  printf(" ERROR : es-wifi module CANNOT get IP address\n");
+      return -1;
+    }
+  }
+  else
+  {
+		 printf("ERROR : es-wifi module NOT connected\n");
+     return -1;
+  }
+  return 0;
+}
+
+#if defined (TERMINAL_USE)
+/**
+  * @brief  Retargets the C library printf function to the USART.
+  * @param  None
+  * @retval None
+  */
+PUTCHAR_PROTOTYPE
+{
+  /* Place your implementation of fputc here */
+  /* e.g. write a character to the USART1 and Loop until the end of transmission */
+  HAL_UART_Transmit(&hDiscoUart, (uint8_t *)&ch, 1, 0xFFFF);
+
+  return ch;
+}
+#endif /* TERMINAL_USE */
+
+/**
+  * @brief  EXTI line detection callback.
+  * @param  GPIO_Pin: Specifies the port pin connected to corresponding EXTI line.
+  * @retval None
+  */
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
+{
+  switch (GPIO_Pin)
+  {
+    case (GPIO_PIN_1):
+    {
+      SPI_WIFI_ISR();
+      break;
+    }
+    default:
+    {
+      break;
+    }
+  }
+}
+
+/**
+  * @brief  SPI3 line detection callback.
+  * @param  None
+  * @retval None
+  */
+void SPI3_IRQHandler(void)
+{
+  HAL_SPI_IRQHandler(&hspi);
+}
+
 
 /* USER CODE END 4 */
 
@@ -711,6 +884,25 @@ void StartDefaultTask(void *argument)
     printf("Hola\r\n");
   }
   /* USER CODE END 5 */
+}
+
+/* USER CODE BEGIN Header_wifiStartTask */
+/**
+* @brief Function implementing the wifiStarat thread.
+* @param argument: Not used
+* @retval None
+*/
+/* USER CODE END Header_wifiStartTask */
+void wifiStartTask(void *argument)
+{
+  /* USER CODE BEGIN wifiStartTask */
+	wifi_connect();
+  /* Infinite loop */
+  for(;;)
+  {
+    osDelay(1);
+  }
+  /* USER CODE END wifiStartTask */
 }
 
 /**
